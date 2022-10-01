@@ -14,7 +14,7 @@ My first trials failed miserably using the DMA versions of the HAL API, so I dec
 - Only __16bit__ data is supported
 - Please note that this functionality deactivates the standard implementation of analogRead()!
 
-## Pins for I2S3
+## Pins for ADC
 
 PINs  |	FUNCTIONs 
 ------|------------	
