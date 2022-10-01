@@ -30,7 +30,7 @@ PB0	  | Channel7
 
 ## API
 
-Below I demonstrate the basic API provided by this library. However, I recommend that you use the I2SStream class from the [Arduino Audio Tools](https://github.com/pschatzmann/arduino-audio-tools) library which uses this functionality.
+Below I demonstrate the basic API provided by this library. 
 
 
 ### Receiving Data
