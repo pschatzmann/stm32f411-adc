@@ -10,9 +10,9 @@ My first trials failed miserably using the DMA versions of the HAL API, so I dec
 
 - The DMA is used to transfer the data
 - The API is using __Callbacks__ to transfer the data.
-- 8 input channels
+- max 8 input channels
 - Only __16bit__ data is supported
-- I also incuded the __codec drivers__ that are part of some stm32 evaluation boards. 
+- Please note that this functionality deactivates the standard implementation of analogRead()!
 
 ## Pins for I2S3
 
@@ -36,46 +36,33 @@ Below I demonstrate the basic API provided by this library. However, I recommend
 ### Receiving Data
 
 ```
-#include "stm32-adc.h"
+#include "STM32_DMA_ADC.h"
 
-int channels = 8;
-int sample_n o =0;
+STM32_DMA_ADC adc;
+int sample_rate = 8000;
+int channels = 2;
+int buffer_size = 1024;
 
-
-void writeData(uint8_t *buffer, int byteCount){
-  //out.write(buffer, byteCount);
-  int16_t *data = (int16_t*)buffer;
-  int sample_count = byteCount/2;
-  for (int j=0;j<sample_count;j++){
-    Serial.print(data[j]);
-    if (sample_no++==8){
-       Serial.println();
-    }
-  }
+// data callback
+void writeData(int16_t *rec, int sampleCount){
 }
 
 void setup() {
   Serial.begin(115200);
   while(!Serial);
-  
-  Serial.printf("HCLK=%d\n", HAL_RCC_GetHCLKFreq());
-  Serial.printf("APB1=%d\n", HAL_RCC_GetPCLK1Freq());
-  Serial.printf("APB2=%d\n", HAL_RCC_GetPCLK2Freq());
 
-  if (!fastAdcBegin(8000, writeData, 1024)){
-    Serial.println("ADC Error");
-  }
-
+  adc.setCenterZero(true);
+  adc.begin(sample_rate, channels, writeData, buffer_size);  
 }
 
 void loop() {
-
 }
+
 ```
 
 ## Documentation
 
-Here is the link to the [actual documentation](https://pschatzmann.github.io/stm32f411-i2s/html/modules.html).
+Here is the link to the [actual documentation](https://pschatzmann.github.io/stm32f411-adc/html/modules.html).
 
 You might also find further information in [my Blogs](https://www.pschatzmann.ch/tags/stm32)
 

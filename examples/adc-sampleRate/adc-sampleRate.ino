@@ -7,10 +7,8 @@ int channels = 2;
 int sample_no = 0;
 int frame = 0;
 
-void writeData(uint8_t *buffer, int byteCount){
-  int16_t *data = (int16_t*)buffer;
-  int sample_count = byteCount/2;
-  for (int j=0;j<sample_count;j++){
+void writeData(int16_t *data, int sampleCount){
+  for (int j=0;j<sampleCount;j++){
     if (sample_no++>=ADC_MAX_CHANNELS){
        sample_no = 0;
        frame++;
