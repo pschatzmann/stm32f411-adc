@@ -62,7 +62,7 @@ void loop() {
 
 ## Documentation
 
-Here is the link to the [actual documentation](https://pschatzmann.github.io/stm32f411-adc/html/modules.html).
+Here is the link to the [actual documentation](https://pschatzmann.github.io/stm32f411-adc/html/class_s_t_m32___d_m_a___a_d_c.html).
 
 You might also find further information in [my Blogs](https://www.pschatzmann.ch/tags/stm32)
 
