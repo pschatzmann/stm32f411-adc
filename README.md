@@ -16,7 +16,7 @@ My first trials failed miserably using the DMA versions of the HAL API, so I dec
 - We can normalize the data so that the avg is displayed as 0 (this is e.gl usefull for audio)
 - Please note that this functionality deactivates the standard implementation of analogRead()!
 
-## Pins for I2S3
+## Pins for ADC
 
 PINs  |	FUNCTIONs 
 ------|------------	
@@ -32,7 +32,7 @@ PB0	  | Channel7
 
 ## API
 
-Below I demonstrate the basic API provided by this library. However, I recommend that you use the I2SStream class from the [Arduino Audio Tools](https://github.com/pschatzmann/arduino-audio-tools) library which uses this functionality.
+Below I demonstrate the basic API provided by this library. 
 
 
 ### Receiving Data
