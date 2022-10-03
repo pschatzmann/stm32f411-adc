@@ -1,18 +1,23 @@
 #pragma
 #include "Arduino.h"
-#include <stdlib.h>
-#include <stdint.h>
 #include "hal_conf_extra.h"
 #include "stm32f4xx_it.h"
+#include <stdlib.h>
+#include <stdint.h>
+#include <forward_list>
+#include <cassert>
+#include <functional>
+#include <vector>
 
 #undef Error_Handler
 #define ADC_MAX_CHANNELS 8
 
-class STM32_DMA_ADC;
-STM32_DMA_ADC *self_STM32_DMA_ADC = nullptr;
-extern "C" void DMA2_Stream0_IRQHandler(void);
-
-
+// Callback handler vectors
+std::vector<std::function<void(ADC_HandleTypeDef*)>> list_HAL_ADC_MspInit;
+std::vector<std::function<void(ADC_HandleTypeDef*)>> list_HAL_ADC_MspDeInit;
+std::vector<std::function<void(ADC_HandleTypeDef*)>> list_HAL_ADC_ConvCpltCallback;
+std::vector<std::function<void(ADC_HandleTypeDef*)>> list_HAL_ADC_ConvHalfCpltCallback;
+std::vector<std::function<void()>> list_DMA2_Stream0_IRQHandler;
 
 /**
  * @brief fast ADC using the DMA. We have 8 channels available 
@@ -26,12 +31,6 @@ extern "C" void DMA2_Stream0_IRQHandler(void);
 18	PB0	ADC1_IN8	Channe 7
  */
 class STM32_DMA_ADC {
-    friend void DMA2_Stream0_IRQHandler(void);
-    friend void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
-    friend void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc);
-    friend void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc);
-    friend void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc);
-    friend class ADCAverageCalculator;
 
    enum ErrorLevelSTM32 {Error, Info, Warning};
    typedef void (*TcallbackADC)(int16_t*data, int sampleCount);
@@ -45,14 +44,11 @@ class STM32_DMA_ADC {
         ADCAverageCalculator(int channels, int maxCount){
             channel_cnt = channels;
             max_cnt = maxCount;
-            p_avg = new float[channel_cnt];
+            p_avg = new float[channel_cnt]();
             is_relevant = max_cnt>0;
             is_ready = false;
             idx = 0;
             cnt = 0;
-            for (int ch=0;ch<channel_cnt;ch++){
-                p_avg[ch] = 0.0;
-            }
         }
 
         ~ADCAverageCalculator(){
@@ -117,10 +113,38 @@ class STM32_DMA_ADC {
 
   public:
 
-    STM32_DMA_ADC() {
-        self_STM32_DMA_ADC = this;
+    /**
+     * @brief Construct a new stm32 dma adc object w/o timer in ContinuousConvMode
+     * 
+     * @param channels 
+     */
+    STM32_DMA_ADC(int channels) {
+        channel_cnt = channels;
+        adc_buffer_size = getBufferSize(0);
+        is_continuous_conv_mode = true;
+        // make sure that we have enough time to process the callbacks
+        sampling_time = ADC_SAMPLETIME_56CYCLES;  //ADC_SAMPLETIME_3CYCLES ADC_SAMPLETIME_15CYCLES ADC_SAMPLETIME_28CYCLES ADC_SAMPLETIME_144CYCLES ADC_SAMPLETIME_480CYCLES
     };
 
+    /**
+     * @brief Construct a new stm32 dma adc object with defined sample rate (using a timer)
+     * 
+     * @param timerNum 
+     * @param sampleRate 
+     * @param bufferSize 
+     */
+    STM32_DMA_ADC(int channels, TIM_TypeDef *timerNum, int sampleRate, TcallbackADC adcCallback=nullptr, uint32_t bufferSize=0) {
+        channel_cnt = channels;
+        timer_num = timerNum;
+        sample_rate = sampleRate;
+        adc_callback = adcCallback;
+        adc_buffer_size = getBufferSize(bufferSize);
+        is_continuous_conv_mode = false;
+        sampling_time = sampleRate < 50000 ? ADC_SAMPLETIME_15CYCLES : ADC_SAMPLETIME_3CYCLES;
+        correction_factor = sampleRate <= 50000 ? 0.89 : 0.84;
+    };
+
+    /// Destructor
     ~STM32_DMA_ADC() {
         if (is_active) end();
         if (p_timer!=nullptr) delete p_timer;
@@ -128,15 +152,19 @@ class STM32_DMA_ADC {
     }
 
     /// Starts the ADC Processing
-    bool begin(int sampleRate, int channels, TcallbackADC adcCallback=nullptr, uint32_t bufferSize=0){
-        channel_cnt = channels;
-        adc_callback = adcCallback;
-        adc_buffer_size = getBufferSize(bufferSize);
+    bool begin(){
+        // SystemClock_Config();
+
         // calculate offset of last frame in result half buffer
         int samplesBuffer = adc_buffer_size/2;
         int samplesHalfBuffer = samplesBuffer/2;
-        lastFrameStartIdx = samplesHalfBuffer - channels;
+        lastFrameStartIdx = samplesHalfBuffer - channel_cnt;
 
+        // add handlers
+        addHandlers();
+
+        // log some relevant information
+        STM32_LOG(Info,"sample_rate: %d ", sample_rate);
         STM32_LOG(Info,"channels: %d ", channel_cnt);
         STM32_LOG(Info,"total bufferSize: %d bytes", adc_buffer_size);
         STM32_LOG(Info,"total bufferSize: %d samples", samplesBuffer);
@@ -156,38 +184,47 @@ class STM32_DMA_ADC {
         MX_DMA_Init();
         MX_ADC1_Init();
 
+        // Start ADC
         if (HAL_ADC_Start_DMA(&hadc1, (uint32_t*) adc_buffer, samplesBuffer)!=HAL_OK){
             Error_Handler();
             return false;
         }
 
-        if (p_timer==nullptr){
-            p_timer = new HardwareTimer(TIM3);
-            p_timer->setPrescaleFactor(30-1); // 30 mhz -> 1mhz
-            int overflowHz = correction_factor * sampleRate / channels * 10;
-            STM32_LOG(Info, "overflowHz: %d", overflowHz);
-    
-            p_timer->setOverflow(overflowHz, HERTZ_FORMAT); // 10000 microseconds = 10 milliseconds
-            //p_timer->attachInterrupt(adcDmaTimerCallback);
+        // if DMA is driven by timer we start it now
+        if (!is_continuous_conv_mode){
+            // allocate the timer
+            p_timer = new HardwareTimer(timer_num);
+            int32_t hz = correction_factor * 10 * sample_rate / channel_cnt;
+            int32_t micro_sec = 1000000 / hz;
+            p_timer->setOverflow(micro_sec, MICROSEC_FORMAT); 
+            STM32_LOG(Info, "overflowHz: %d", hz);
+            STM32_LOG(Info, "overflowUs: %d", micro_sec);
+
+            // Activate trigger for DMA - instead of p_timer callback
+            TIM_MasterConfigTypeDef sMasterConfig = {0};
+            sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+            sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_ENABLE;
+            if (HAL_TIMEx_MasterConfigSynchronization(p_timer->getHandle(), &sMasterConfig) != HAL_OK) {
+                Error_Handler();
+            }
+
+            // start the p_timer
+            p_timer->resume();
+
         }
 
-        // Activate trigger for DMA - instead of p_timer callback
-        TIM_MasterConfigTypeDef sMasterConfig = {0};
-        sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-        sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_ENABLE;
-        if (HAL_TIMEx_MasterConfigSynchronization(p_timer->getHandle(), &sMasterConfig) != HAL_OK) {
-            Error_Handler();
-        }
-
-        // start the p_timer
-        p_timer->resume();
         delay(100);
+
+        // // we might be able to use the buffer information from hdma
+        // STM32_LOG(Info, "hdma_adc1 check: %d",&hdma_adc1==hadc1.DMA_Handle);
+        // STM32_LOG(Info, "adc_buffer_size check: %d - %d",hdma_adc1.Instance->NDTR, adc_buffer_size);
+        // STM32_LOG(Info, "buffer_check: %x %x", (uint8_t*)hdma_adc1.Instance->PAR, adc_buffer);
 
         is_active = true;
         return is_active;
     }
 
-    /// Provides the avg calculated over the initial samples for the indicated channel
+    /// Provides the avg calculated over the initial samples for the indicated channel. Values are only available with normalization active: Call setCenterZero(true) before begin()!
     int16_t avg(int ch){
         if (ch>=channel_cnt) return 0;
         return p_avg->avg(ch);
@@ -206,6 +243,7 @@ class STM32_DMA_ADC {
     /// Stops the ADC processing
     void end() {
         p_timer->pause();
+        removeHandlers();
 
         HAL_ADC_Stop_DMA(&hadc1);
         HAL_ADC_MspDeInit(&hadc1);
@@ -252,7 +290,7 @@ class STM32_DMA_ADC {
         return sampling_time;
     }
 
-    /// Audio data is usually centered at 0 with negative and positive values
+    /// Audio data is usually centered at 0 with negative and positive values: activate value normalization by setting active to true!
     void setCenterZero(bool active){
         is_center_zero = active;
     }
@@ -264,11 +302,14 @@ class STM32_DMA_ADC {
 
 protected:
     HardwareTimer *p_timer=nullptr;
-    float correction_factor = 0.9;
+    TIM_TypeDef *timer_num;
+    float correction_factor =  1.0;
     bool is_active = false;
     bool is_center_zero = false;
     bool is_center_zero_in_progress;
+    bool is_continuous_conv_mode;
     int channel_cnt=0;
+    int sample_rate=0;
     int lastFrameStartIdx=0;
     uint32_t sampling_time = ADC_SAMPLETIME_28CYCLES; // ADC_SAMPLETIME_3CYCLES ADC_SAMPLETIME_15CYCLES ADC_SAMPLETIME_28CYCLES ADC_SAMPLETIME_144CYCLES;
     uint8_t* adc_buffer = nullptr;
@@ -279,6 +320,14 @@ protected:
     TcallbackADC adc_callback = nullptr;
     ADCAverageCalculator *p_avg = nullptr;
 
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspInit=std::bind(&STM32_DMA_ADC::HAL_ADC_MspInit, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspDeInit=std::bind(&STM32_DMA_ADC::HAL_ADC_MspDeInit, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvCpltCallback=std::bind(&STM32_DMA_ADC::HAL_ADC_ConvCpltCallback, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvHalfCpltCallback=std::bind(&STM32_DMA_ADC::HAL_ADC_ConvHalfCpltCallback, this, std::placeholders::_1);
+    const std::function<void()> f_DMA2_Stream0_IRQHandler=std::bind(&STM32_DMA_ADC::DMA2_Stream0_IRQHandler, this);
+
+
+    /// determines the "correct" buffer size based on the requested size
     int getBufferSize(int bufferSize) {
         int result = bufferSize;
         int frameSize = channel_cnt*sizeof(int16_t);
@@ -297,6 +346,7 @@ protected:
         return result;
     }
 
+    /// Determines the channel for the indicated pin  
     int getChannelForPin(int pin){
         int channel = -1;
         switch(pin){
@@ -324,6 +374,69 @@ protected:
         return channel;
     }
 
+    // register local handlers
+    void addHandlers() {
+        list_HAL_ADC_MspInit.push_back(f_HAL_ADC_MspInit); 
+        list_HAL_ADC_MspDeInit.push_back(f_HAL_ADC_MspDeInit); 
+        list_HAL_ADC_ConvCpltCallback.push_back(f_HAL_ADC_ConvCpltCallback); 
+        list_HAL_ADC_ConvHalfCpltCallback.push_back(f_HAL_ADC_ConvHalfCpltCallback); 
+        list_DMA2_Stream0_IRQHandler.push_back(f_DMA2_Stream0_IRQHandler);
+    }
+
+    // deregister local handlers
+    void removeHandlers() {
+        // list_HAL_ADC_MspInit.remove(f_HAL_ADC_MspInit); 
+        // list_HAL_ADC_MspDeInit.remove(f_HAL_ADC_MspDeInit); 
+        // list_HAL_ADC_ConvCpltCallback.remove(f_HAL_ADC_ConvCpltCallback); 
+        // list_HAL_ADC_ConvHalfCpltCallback.remove(f_HAL_ADC_ConvHalfCpltCallback); 
+        // list_DMA2_Stream0_IRQHandler.remove(f_DMA2_Stream0_IRQHandler);
+        list_HAL_ADC_MspInit.clear();
+        list_HAL_ADC_MspDeInit.clear(); 
+        list_HAL_ADC_ConvCpltCallback.clear(); 
+        list_HAL_ADC_ConvHalfCpltCallback.clear(); 
+        list_DMA2_Stream0_IRQHandler.clear();
+    }
+
+    // void SystemClock_Config(void) {
+    //     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    //     RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    //     /** Configure the main internal regulator output voltage
+    //      */
+    //     __HAL_RCC_PWR_CLK_ENABLE();
+    //     __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    //     /** Initializes the RCC Oscillators according to the specified parameters
+    //      * in the RCC_OscInitTypeDef structure.
+    //      */
+    //     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    //     RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+    //     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    //     RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    //     RCC_OscInitStruct.PLL.PLLM = 12;
+    //     RCC_OscInitStruct.PLL.PLLN = 96;
+    //     RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+    //     RCC_OscInitStruct.PLL.PLLQ = 5;
+    //     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    //     {
+    //         Error_Handler();
+    //     }
+
+    //     /** Initializes the CPU, AHB and APB buses clocks
+    //      */
+    //     RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+    //                                 |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+    //     RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    //     RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    //     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    //     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+    //     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+    //     {
+    //         Error_Handler();
+    //     }
+    // }
+
     /**
      * @brief ADC1 Initialization Function
      */
@@ -333,22 +446,26 @@ protected:
 
         // Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
         hadc1.Instance = ADC1;
-        hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+        hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4; // ADC_CLOCK_SYNC_PCLK_DIV4
         hadc1.Init.Resolution = ADC_RESOLUTION_12B;
         hadc1.Init.ScanConvMode = channel_cnt>1 ? ENABLE : DISABLE;
-        hadc1.Init.ContinuousConvMode = DISABLE;
         hadc1.Init.DiscontinuousConvMode = DISABLE;
-        //hadc1.Init.DiscontinuousConvMode = ENABLE;
-        //hadc1.Init.NbrOfDiscConversion = 1;
-        hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-        hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
-        //hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-        //hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-
+        hadc1.Init.NbrOfDiscConversion = 1;
         hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
         hadc1.Init.NbrOfConversion = channel_cnt;
         hadc1.Init.DMAContinuousRequests = ENABLE;
         hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV; //ADC_EOC_SINGLE_CONV; // ADC_EOC_SEQ_CONV
+
+        if (is_continuous_conv_mode){
+            hadc1.Init.ContinuousConvMode = ENABLE;
+            hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+            hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+        } else {
+            hadc1.Init.ContinuousConvMode =  DISABLE;
+            hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+            hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;
+        }
+
         if (HAL_ADC_Init(&hadc1) != HAL_OK){
             Error_Handler();
         }
@@ -390,6 +507,9 @@ protected:
 
     /// DMA Callback
     void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
+        // guard
+        if (hadc!=&hadc1) return;
+
         int16_t *start = (int16_t *) &(adc_buffer[adc_buffer_size/2]);
         int len_bytes = adc_buffer_size/2;
         int len_samples = len_bytes / 2;
@@ -405,6 +525,9 @@ protected:
 
     /// DMA Callback
     void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc){
+        // guard
+        if (hadc!=&hadc1) return;
+
         int16_t *start = (int16_t *) adc_buffer;
         int len_bytes = adc_buffer_size/2;
         int len_samples = len_bytes / 2;
@@ -423,6 +546,9 @@ protected:
     * This function configures the hardware resources used in this example
     */
     void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc) {
+        // guard
+        if (hadc!=&hadc1) return;
+
         GPIO_InitTypeDef GPIO_InitStruct = {0};
         if(hadc->Instance==ADC1) {
             __HAL_RCC_ADC1_CLK_ENABLE();
@@ -460,7 +586,7 @@ protected:
             hdma_adc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
             hdma_adc1.Init.MemDataAlignment = DMA_MDATAALIGN_HALFWORD;
             hdma_adc1.Init.Mode = DMA_CIRCULAR;
-            hdma_adc1.Init.Priority = DMA_PRIORITY_HIGH;
+            hdma_adc1.Init.Priority = DMA_PRIORITY_LOW; //DMA_PRIORITY_HIGH
             //hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_DISABLE;  
             hdma_adc1.Init.FIFOMode = DMA_FIFOMODE_ENABLE; 
             hdma_adc1.Init.FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
@@ -480,6 +606,9 @@ protected:
     * This function freeze the hardware resources used in this example
     */
     void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc) {
+        // guard
+        if (hadc!=&hadc1) return;
+
         if(hadc->Instance==ADC1){
             __HAL_RCC_ADC1_CLK_DISABLE();
             HAL_GPIO_DeInit(GPIOA, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_3|GPIO_PIN_4
@@ -489,6 +618,10 @@ protected:
 
             HAL_DMA_DeInit(hadc->DMA_Handle);
         }
+    }
+
+    void DMA2_Stream0_IRQHandler(void){
+        HAL_DMA_IRQHandler(&hdma_adc1);
     }
 
     void STM32_LOG(ErrorLevelSTM32 level, const char *fmt,...) {
@@ -519,20 +652,28 @@ protected:
 
 };
 
-
 /// DMA IRQ Handler  
 extern "C" void DMA2_Stream0_IRQHandler(void){
-    HAL_DMA_IRQHandler(&(self_STM32_DMA_ADC->hdma_adc1));
+//    HAL_DMA_IRQHandler(&(self_STM32_DMA_ADC->hdma_adc1));
+    for (auto f: list_DMA2_Stream0_IRQHandler){
+        f();
+    }
 }
 
 /// DMA Callback
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvCpltCallback(hadc);
+//    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvCpltCallback(hadc);
+    for (auto f: list_HAL_ADC_ConvCpltCallback){
+        f(hadc);
+    }
 }
 
 /// DMA Callback
 extern "C"  void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc){
-    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvHalfCpltCallback(hadc);
+//    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvHalfCpltCallback(hadc);
+    for (auto f: list_HAL_ADC_ConvHalfCpltCallback){
+        f(hadc);
+    }
 }
 
 /**
@@ -540,7 +681,10 @@ extern "C"  void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc){
 * This function configures the hardware resources used in this example
 */
 extern "C" void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc) {
-    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspInit(hadc);
+    //if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspInit(hadc);
+    for (auto f: list_HAL_ADC_MspInit){
+        f(hadc);
+    }
 }
 
 /**
@@ -548,5 +692,10 @@ extern "C" void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc) {
 * This function freeze the hardware resources used in this example
 */
 extern "C" void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc) {
-    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspDeInit(hadc);
+ //   if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspDeInit(hadc);
+    for (auto f: list_HAL_ADC_MspDeInit){
+        f(hadc);
+    }
+
 }
+

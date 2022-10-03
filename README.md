@@ -9,9 +9,11 @@ Unfortunately [STMDuino](https://github.com/stm32duino) does not provide this fu
 My first trials failed miserably using the DMA versions of the HAL API, so I decided to generate a working solution using the __STM Cube IDE__ and then convert this to Arduino library, that provides the following functionality:
 
 - The DMA is used to transfer the data
-- The API is using __Callbacks__ to transfer the data.
+- Optionally we can use a timer to define the sampling rate
+- The API is using __Callbacks__ to transfer the data or you can call the __analogRead() instance method__.
 - max 8 input channels
 - Only __16bit__ data is supported
+- We can normalize the data so that the avg is displayed as 0 (this is e.gl usefull for audio)
 - Please note that this functionality deactivates the standard implementation of analogRead()!
 
 ## Pins for I2S3

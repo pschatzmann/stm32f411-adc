@@ -1,10 +1,12 @@
 #include "STM32_DMA_ADC.h"
 #include "AudioTools.h"
 
-STM32_DMA_ADC adc;
-int sample_rate = 8000;
-int channels = 2;
-int buffer_size = 1024;
+const int sample_rate = 8000;
+const int channels = 2;
+const int buffer_size = 1024;
+void writeData(int16_t *data, int sampleCount);
+// DMA with timer and defined sample rate
+STM32_DMA_ADC adc(channels, TIM3, sample_rate, writeData, 1024);
 NBuffer<uint8_t> buffer(buffer_size, 50);
 
 // data callback: we just fill a buffer
@@ -17,7 +19,7 @@ void setup() {
   while(!Serial);
 
   adc.setCenterZero(true);
-  adc.begin(sample_rate, channels, writeData, buffer_size);  
+  adc.begin();  
 }
 
 void loop() {

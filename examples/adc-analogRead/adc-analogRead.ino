@@ -1,13 +1,14 @@
 #include "STM32_DMA_ADC.h"
 
-STM32_DMA_ADC adc;
-int channels = 2;
+// define continuous mode adc w/o timer
+const int channels = 2;
+STM32_DMA_ADC adc(channels);
 
 void setup() {
   Serial.begin(115200);
   while(!Serial);
 
-  adc.begin(8000, channels);  
+  adc.begin();  
 
 }
 
