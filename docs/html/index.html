@@ -71,13 +71,15 @@ $(function() {
 <p>My first trials failed miserably using the DMA versions of the HAL API, so I decided to generate a working solution using the <b>STM Cube IDE</b> and then convert this to Arduino library, that provides the following functionality:</p>
 <ul>
 <li>The DMA is used to transfer the data</li>
-<li>The API is using <b>Callbacks</b> to transfer the data.</li>
+<li>Optionally we can use a timer to define the sampling rate</li>
+<li>The API is using <b>Callbacks</b> to transfer the data or you can call the <b>analogRead() instance method</b>.</li>
 <li>max 8 input channels</li>
 <li>Only <b>16bit</b> data is supported</li>
+<li>We can normalize the data so that the avg is displayed as 0 (this is e.gl usefull for audio)</li>
 <li>Please note that this functionality deactivates the standard implementation of analogRead()!</li>
 </ul>
 <h1><a class="anchor" id="autotoc_md1"></a>
-Pins for I2S3</h1>
+Pins for ADC</h1>
 <table class="markdownTable">
 <tr class="markdownTableHead">
 <th class="markdownTableHeadNone">PINs   </th><th class="markdownTableHeadNone">FUNCTIONs    </th></tr>
@@ -100,15 +102,17 @@ Pins for I2S3</h1>
 </table>
 <h1><a class="anchor" id="autotoc_md2"></a>
 API</h1>
-<p>Below I demonstrate the basic API provided by this library. However, I recommend that you use the I2SStream class from the <a href="https://github.com/pschatzmann/arduino-audio-tools">Arduino Audio Tools</a> library which uses this functionality.</p>
+<p>Below I demonstrate the basic API provided by this library.</p>
 <h2><a class="anchor" id="autotoc_md3"></a>
-Receiving Data</h2>
-<div class="fragment"><div class="line">#include &quot;STM32_DMA_ADC.h&quot;</div>
+Receiving Data via Callback</h2>
+<div class="fragment"><div class="line">#include &quot;AnalogReaderDMA.h&quot;</div>
 <div class="line"> </div>
-<div class="line">STM32_DMA_ADC adc;</div>
-<div class="line">int sample_rate = 8000;</div>
-<div class="line">int channels = 2;</div>
-<div class="line">int buffer_size = 1024;</div>
+<div class="line">const int sample_rate = 8000;</div>
+<div class="line">const int channels = 2;</div>
+<div class="line">const int buffer_size = 1024;</div>
+<div class="line">void writeData(int16_t *data, int sampleCount);</div>
+<div class="line">// DMA with timer and defined sample rate</div>
+<div class="line">AnalogReaderDMA adc(channels, TIM3, sample_rate, writeData, 1024);</div>
 <div class="line"> </div>
 <div class="line">// data callback</div>
 <div class="line">void writeData(int16_t *rec, int sampleCount){</div>
@@ -118,23 +122,47 @@ Receiving Data</h2>
 <div class="line">  Serial.begin(115200);</div>
 <div class="line">  while(!Serial);</div>
 <div class="line"> </div>
-<div class="line">  adc.setCenterZero(true);</div>
-<div class="line">  adc.begin(sample_rate, channels, writeData, buffer_size);  </div>
+<div class="line">  adc.setCenterZero(true); // optional: we treat it as audio data</div>
+<div class="line">  adc.begin();  </div>
 <div class="line">}</div>
 <div class="line"> </div>
 <div class="line">void loop() {</div>
 <div class="line">}</div>
-</div><!-- fragment --><h1><a class="anchor" id="autotoc_md4"></a>
+</div><!-- fragment --><h2><a class="anchor" id="autotoc_md4"></a>
+Using Analog Read</h2>
+<p>The preferred way to read the data in continuous mode is by using analogRead();</p>
+<div class="fragment"><div class="line">#include &quot;AnalogReaderDMA.h&quot;</div>
+<div class="line"> </div>
+<div class="line">// define continuous mode adc w/o timer</div>
+<div class="line">const int channels = 2;</div>
+<div class="line">AnalogReaderDMA adc(channels);</div>
+<div class="line"> </div>
+<div class="line">void setup() {</div>
+<div class="line">  Serial.begin(115200);</div>
+<div class="line">  while(!Serial);</div>
+<div class="line"> </div>
+<div class="line">  adc.begin();  </div>
+<div class="line"> </div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line">void loop() {</div>
+<div class="line">  for (int j=0; j&lt;channels; j++){</div>
+<div class="line">    Serial.print(adc.analogRead(j));</div>
+<div class="line">    Serial.print(&quot; &quot;);</div>
+<div class="line">  }</div>
+<div class="line">  Serial.println();</div>
+<div class="line">}</div>
+</div><!-- fragment --><h1><a class="anchor" id="autotoc_md5"></a>
 Documentation</h1>
-<p>Here is the link to the <a href="https://pschatzmann.github.io/stm32f411-adc/html/modules.html">actual documentation</a>.</p>
+<p>Here is the link to the <a href="https://pschatzmann.github.io/stm32f411-adc/html/class_s_t_m32___d_m_a___a_d_c.html">actual documentation</a>.</p>
 <p>You might also find further information in <a href="https://www.pschatzmann.ch/tags/stm32">my Blogs</a></p>
-<h1><a class="anchor" id="autotoc_md5"></a>
+<h1><a class="anchor" id="autotoc_md6"></a>
 Installation in Arduino</h1>
 <p>You can download the library as zip and call include Library -&gt; zip library. Or you can git clone this project into the Arduino libraries folder e.g. with</p>
 <div class="fragment"><div class="line">cd  ~/Documents/Arduino/libraries</div>
 <div class="line">git clone https://github.com/pschatzmann/stm32f411-adc</div>
 </div><!-- fragment --><p>I recommend to use git because you can easily update to the latest version just by executing the <code>git pull</code> command in the project folder.</p>
-<h1><a class="anchor" id="autotoc_md6"></a>
+<h1><a class="anchor" id="autotoc_md7"></a>
 Copyright</h1>
 <p><b>Copyright © 2022 Phil Schatzmann</b></p>
 <p><a href="License.txt">GNU General Public License</a></p>

@@ -1,4 +1,4 @@
-#include "STM32_DMA_ADC.h"
+#include "AnalogReaderDMA.h"
 
 const int sample_rate = 44200;
 const int channels = 1;
@@ -6,7 +6,7 @@ int sample_no = 0;
 volatile int frame_count = 0;
 void writeData(int16_t *data, int sampleCount);
 // DMA with timer and defined sample rate
-STM32_DMA_ADC adc(channels, TIM3, sample_rate, writeData, 1024);
+AnalogReaderDMA adc(channels, TIM3, sample_rate, writeData, 1024);
 
 void writeData(int16_t *data, int sampleCount){
   for (int j=0;j<sampleCount;j++){

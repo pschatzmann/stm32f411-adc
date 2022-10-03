@@ -1,5 +1,7 @@
 var searchData=
 [
-  ['isactive_32',['isActive',['../class_s_t_m32___d_m_a___a_d_c.html#a3a617d53062808d9e588ecb5024626d2',1,'STM32_DMA_ADC']]],
-  ['iscenterzero_33',['isCenterZero',['../class_s_t_m32___d_m_a___a_d_c.html#a53ac7176233dddf779cdf5cac3e18908',1,'STM32_DMA_ADC']]]
+  ['hal_5fadc_5fconvcpltcallback_33',['HAL_ADC_ConvCpltCallback',['../class_analog_reader_d_m_a.html#aa7ad5a94d127e6944414af531152a0f5',1,'AnalogReaderDMA']]],
+  ['hal_5fadc_5fconvhalfcpltcallback_34',['HAL_ADC_ConvHalfCpltCallback',['../class_analog_reader_d_m_a.html#af4115cadff4becb94696459fe02c689d',1,'AnalogReaderDMA']]],
+  ['hal_5fadc_5fmspdeinit_35',['HAL_ADC_MspDeInit',['../class_analog_reader_d_m_a.html#af3bd1322f6ec66271331eb371d141c55',1,'AnalogReaderDMA']]],
+  ['hal_5fadc_5fmspinit_36',['HAL_ADC_MspInit',['../class_analog_reader_d_m_a.html#af41e22d19b8f0464b4aa464038adb48e',1,'AnalogReaderDMA']]]
 ];

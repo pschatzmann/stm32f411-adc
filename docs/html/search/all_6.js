@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['isactive_11',['isActive',['../class_s_t_m32___d_m_a___a_d_c.html#a3a617d53062808d9e588ecb5024626d2',1,'STM32_DMA_ADC']]],
-  ['iscenterzero_12',['isCenterZero',['../class_s_t_m32___d_m_a___a_d_c.html#a53ac7176233dddf779cdf5cac3e18908',1,'STM32_DMA_ADC']]]
+  ['isactive_13',['isActive',['../class_analog_reader_d_m_a.html#a50f7c11b243b363d8fe8102429a53fb4',1,'AnalogReaderDMA']]],
+  ['iscenterzero_14',['isCenterZero',['../class_analog_reader_d_m_a.html#a9f5dd3d97136ddcc81a08815b96b0522',1,'AnalogReaderDMA']]]
 ];

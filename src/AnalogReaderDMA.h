@@ -30,7 +30,7 @@ std::vector<std::function<void()>> list_DMA2_Stream0_IRQHandler;
 17	PA7	ADC1_IN7	Channel 6
 18	PB0	ADC1_IN8	Channe 7
  */
-class STM32_DMA_ADC {
+class AnalogReaderDMA {
 
    enum ErrorLevelSTM32 {Error, Info, Warning};
    typedef void (*TcallbackADC)(int16_t*data, int sampleCount);
@@ -118,7 +118,7 @@ class STM32_DMA_ADC {
      * 
      * @param channels 
      */
-    STM32_DMA_ADC(int channels) {
+    AnalogReaderDMA(int channels) {
         channel_cnt = channels;
         adc_buffer_size = getBufferSize(0);
         is_continuous_conv_mode = true;
@@ -133,7 +133,7 @@ class STM32_DMA_ADC {
      * @param sampleRate 
      * @param bufferSize 
      */
-    STM32_DMA_ADC(int channels, TIM_TypeDef *timerNum, int sampleRate, TcallbackADC adcCallback=nullptr, uint32_t bufferSize=0) {
+    AnalogReaderDMA(int channels, TIM_TypeDef *timerNum, int sampleRate, TcallbackADC adcCallback=nullptr, uint32_t bufferSize=0) {
         channel_cnt = channels;
         timer_num = timerNum;
         sample_rate = sampleRate;
@@ -145,7 +145,7 @@ class STM32_DMA_ADC {
     };
 
     /// Destructor
-    ~STM32_DMA_ADC() {
+    ~AnalogReaderDMA() {
         if (is_active) end();
         if (p_timer!=nullptr) delete p_timer;
         if (adc_buffer!=nullptr) delete adc_buffer;
@@ -320,11 +320,11 @@ protected:
     TcallbackADC adc_callback = nullptr;
     ADCAverageCalculator *p_avg = nullptr;
 
-    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspInit=std::bind(&STM32_DMA_ADC::HAL_ADC_MspInit, this, std::placeholders::_1);
-    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspDeInit=std::bind(&STM32_DMA_ADC::HAL_ADC_MspDeInit, this, std::placeholders::_1);
-    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvCpltCallback=std::bind(&STM32_DMA_ADC::HAL_ADC_ConvCpltCallback, this, std::placeholders::_1);
-    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvHalfCpltCallback=std::bind(&STM32_DMA_ADC::HAL_ADC_ConvHalfCpltCallback, this, std::placeholders::_1);
-    const std::function<void()> f_DMA2_Stream0_IRQHandler=std::bind(&STM32_DMA_ADC::DMA2_Stream0_IRQHandler, this);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspInit=std::bind(&AnalogReaderDMA::HAL_ADC_MspInit, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_MspDeInit=std::bind(&AnalogReaderDMA::HAL_ADC_MspDeInit, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvCpltCallback=std::bind(&AnalogReaderDMA::HAL_ADC_ConvCpltCallback, this, std::placeholders::_1);
+    const std::function<void(ADC_HandleTypeDef*)> f_HAL_ADC_ConvHalfCpltCallback=std::bind(&AnalogReaderDMA::HAL_ADC_ConvHalfCpltCallback, this, std::placeholders::_1);
+    const std::function<void()> f_DMA2_Stream0_IRQHandler=std::bind(&AnalogReaderDMA::DMA2_Stream0_IRQHandler, this);
 
 
     /// determines the "correct" buffer size based on the requested size
@@ -654,7 +654,7 @@ protected:
 
 /// DMA IRQ Handler  
 extern "C" void DMA2_Stream0_IRQHandler(void){
-//    HAL_DMA_IRQHandler(&(self_STM32_DMA_ADC->hdma_adc1));
+//    HAL_DMA_IRQHandler(&(self_AnalogReaderDMA->hdma_adc1));
     for (auto f: list_DMA2_Stream0_IRQHandler){
         f();
     }
@@ -662,7 +662,7 @@ extern "C" void DMA2_Stream0_IRQHandler(void){
 
 /// DMA Callback
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-//    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvCpltCallback(hadc);
+//    if (self_AnalogReaderDMA) self_AnalogReaderDMA->HAL_ADC_ConvCpltCallback(hadc);
     for (auto f: list_HAL_ADC_ConvCpltCallback){
         f(hadc);
     }
@@ -670,7 +670,7 @@ extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 
 /// DMA Callback
 extern "C"  void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc){
-//    if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_ConvHalfCpltCallback(hadc);
+//    if (self_AnalogReaderDMA) self_AnalogReaderDMA->HAL_ADC_ConvHalfCpltCallback(hadc);
     for (auto f: list_HAL_ADC_ConvHalfCpltCallback){
         f(hadc);
     }
@@ -681,7 +681,7 @@ extern "C"  void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef* hadc){
 * This function configures the hardware resources used in this example
 */
 extern "C" void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc) {
-    //if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspInit(hadc);
+    //if (self_AnalogReaderDMA) self_AnalogReaderDMA->HAL_ADC_MspInit(hadc);
     for (auto f: list_HAL_ADC_MspInit){
         f(hadc);
     }
@@ -692,7 +692,7 @@ extern "C" void HAL_ADC_MspInit(ADC_HandleTypeDef* hadc) {
 * This function freeze the hardware resources used in this example
 */
 extern "C" void HAL_ADC_MspDeInit(ADC_HandleTypeDef* hadc) {
- //   if (self_STM32_DMA_ADC) self_STM32_DMA_ADC->HAL_ADC_MspDeInit(hadc);
+ //   if (self_AnalogReaderDMA) self_AnalogReaderDMA->HAL_ADC_MspDeInit(hadc);
     for (auto f: list_HAL_ADC_MspDeInit){
         f(hadc);
     }

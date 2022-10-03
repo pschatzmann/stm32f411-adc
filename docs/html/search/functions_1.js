@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['begin_25',['begin',['../class_s_t_m32___d_m_a___a_d_c.html#a80651efaa8a56986be5aa2efab9c93d0',1,'STM32_DMA_ADC']]]
+  ['begin_28',['begin',['../class_analog_reader_d_m_a.html#a5afb44507bd875ded17423171999b53c',1,'AnalogReaderDMA']]]
 ];

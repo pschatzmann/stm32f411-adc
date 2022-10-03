@@ -35,15 +35,17 @@ PB0	  | Channel7
 Below I demonstrate the basic API provided by this library. 
 
 
-### Receiving Data
+### Receiving Data via Callback
 
 ```
-#include "STM32_DMA_ADC.h"
+#include "AnalogReaderDMA.h"
 
-STM32_DMA_ADC adc;
-int sample_rate = 8000;
-int channels = 2;
-int buffer_size = 1024;
+const int sample_rate = 8000;
+const int channels = 2;
+const int buffer_size = 1024;
+void writeData(int16_t *data, int sampleCount);
+// DMA with timer and defined sample rate
+AnalogReaderDMA adc(channels, TIM3, sample_rate, writeData, 1024);
 
 // data callback
 void writeData(int16_t *rec, int sampleCount){
@@ -53,11 +55,40 @@ void setup() {
   Serial.begin(115200);
   while(!Serial);
 
-  adc.setCenterZero(true);
-  adc.begin(sample_rate, channels, writeData, buffer_size);  
+  adc.setCenterZero(true); // optional: we treat it as audio data
+  adc.begin();  
 }
 
 void loop() {
+}
+
+```
+
+### Using Analog Read
+
+The preferred way to read the data in continuous mode is by using  analogRead();
+
+```
+#include "AnalogReaderDMA.h"
+
+// define continuous mode adc w/o timer
+const int channels = 2;
+AnalogReaderDMA adc(channels);
+
+void setup() {
+  Serial.begin(115200);
+  while(!Serial);
+
+  adc.begin();  
+
+}
+
+void loop() {
+  for (int j=0; j<channels; j++){
+    Serial.print(adc.analogRead(j));
+    Serial.print(" ");
+  }
+  Serial.println();
 }
 
 ```

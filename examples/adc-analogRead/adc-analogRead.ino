@@ -1,8 +1,8 @@
-#include "STM32_DMA_ADC.h"
+#include "AnalogReaderDMA.h"
 
 // define continuous mode adc w/o timer
 const int channels = 2;
-STM32_DMA_ADC adc(channels);
+AnalogReaderDMA adc(channels);
 
 void setup() {
   Serial.begin(115200);
