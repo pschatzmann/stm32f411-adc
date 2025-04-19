@@ -1,7 +1,6 @@
 #pragma
 #include "Arduino.h"
 #include "hal_conf_extra.h"
-#include "stm32f4xx_it.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <forward_list>
