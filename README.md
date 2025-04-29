@@ -2,7 +2,7 @@
 
 I wanted to use the __ADC__ with DMA in Arduino with my __STM32F411 Black Pill__ processor together with my [Arduino Audio Tools](https://github.com/pschatzmann/arduino-audio-tools)! 
 
-![stm32f411](https://pschatzmann.github.io/stm32f411-i2s/stm32f411.jpeg)
+![stm32f411](https://pschatzmann.github.io/stm32-i2s/stm32f411.jpeg)
 
 Unfortunately [STMDuino](https://github.com/stm32duino) does not provide this functionality.
 
